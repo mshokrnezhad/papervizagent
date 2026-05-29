@@ -156,12 +156,14 @@ class VisualizerAgent(BaseAgent):
                 # Default to 1:1 if aspect ratio is missing
                 aspect_ratio = "1:1"
                 if "additional_info" in data and "rounded_ratio" in data["additional_info"]:
-                    aspect_ratio = data["additional_info"]["rounded_ratio"]
+                    aspect_ratio = generation_utils.normalize_aspect_ratio(
+                        data["additional_info"]["rounded_ratio"]
+                    )
 
                 gen_config_args["response_modalities"] = ["IMAGE"]
                 gen_config_args["image_config"] = types.ImageConfig(
                     aspect_ratio=aspect_ratio,
-                    image_size="1k",
+                    image_size="1K",
                 )
             
             if (

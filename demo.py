@@ -44,6 +44,7 @@ try:
     from agents.polish_agent import PolishAgent
     print("DEBUG: Imported all agents")
     from utils import config
+    from utils import generation_utils
     from utils.paperviz_processor import PaperVizProcessor
     print("DEBUG: Imported utils")
 
@@ -76,6 +77,148 @@ st.set_page_config(
     page_title="PaperVizAgent Parallel Demo",
     page_icon="🍌"
 )
+
+ASPECT_RATIO_OPTIONS = ["8:1", "21:9", "16:9", "3:2", "4:3", "1:1", "9:16"]
+DEFAULT_ASPECT_RATIO_INDEX = ASPECT_RATIO_OPTIONS.index("16:9")
+
+DEMO_EXAMPLE_PRESETS = {
+    "PaperVizAgent Framework (Original)": {
+        "method": r"""## Methodology: The PaperVizAgent Framework
+
+In this section, we present the architecture of PaperVizAgent, a reference-driven agentic framework for automated academic illustration. As illustrated in Figure \ref{fig:methodology_diagram}, PaperVizAgent orchestrates a collaborative team of five specialized agents—Retriever, Planner, Stylist, Visualizer, and Critic—to transform raw scientific content into publication-quality diagrams and plots. (See Appendix \ref{app_sec:agent_prompts} for prompts)
+
+### Retriever Agent
+
+Given the source context $S$ and the communicative intent $C$, the Retriever Agent identifies $N$ most relevant examples $\mathcal{E} = \{E_n\}_{n=1}^{N} \subset \mathcal{R}$ from the fixed reference set $\mathcal{R}$ to guide the downstream agents. As defined in Section \ref{sec:task_formulation}, each example $E_i \in \mathcal{R}$ is a triplet $(S_i, C_i, I_i)$.
+To leverage the reasoning capabilities of VLMs, we adopt a generative retrieval approach where the VLM performs selection over candidate metadata:
+$$
+\mathcal{E} = \text{VLM}_{\text{Ret}} \left( S, C, \{ (S_i, C_i) \}_{E_i \in \mathcal{R}} \right)
+$$
+Specifically, the VLM is instructed to rank candidates by matching both research domain (e.g., Agent & Reasoning) and diagram type (e.g., pipeline, architecture), with visual structure being prioritized over topic similarity. By explicitly reasoned selection of reference illustrations $I_i$ whose corresponding contexts $(S_i, C_i)$ best match the current requirements, the Retriever provides a concrete foundation for both structural logic and visual style.
+
+### Planner Agent
+
+The Planner Agent serves as the cognitive core of the system. It takes the source context $S$, communicative intent $C$, and retrieved examples $\mathcal{E}$ as inputs. By performing in-context learning from the demonstrations in $\mathcal{E}$, the Planner translates the unstructured or structured data in $S$ into a comprehensive and detailed textual description $P$ of the target illustration:
+$$
+P = \text{VLM}_{\text{plan}}(S, C, \{ (S_i, C_i, I_i) \}_{E_i \in \mathcal{E}})
+$$
+
+### Stylist Agent
+
+To ensure the output adheres to the aesthetic standards of modern academic manuscripts, the Stylist Agent acts as a design consultant.
+A primary challenge lies in defining a comprehensive “academic style,” as manual definitions are often incomplete.
+To address this, the Stylist traverses the entire reference collection $\mathcal{R}$ to automatically synthesize an *Aesthetic Guideline* $\mathcal{G}$ covering key dimensions such as color palette, shapes and containers, lines and arrows, layout and composition, and typography and icons (see Appendix \ref{app_sec:auto_summarized_style_guide} for the summarized guideline and implementation details). Armed with this guideline, the Stylist refines each initial description $P$ into a stylistically optimized version $P^*$:
+$$
+P^* = \text{VLM}_{\text{style}}(P, \mathcal{G})
+$$
+This ensures that the final illustration is not only accurate but also visually professional.
+
+### Visualizer Agent
+
+After receiving the stylistically optimized description $P^*$, the Visualizer Agent collaborates with the Critic Agent to render academic illustrations and iteratively refine their quality. The Visualizer Agent leverages an image generation model to transform textual descriptions into visual output. In each iteration $t$, given a description $P_t$, the Visualizer generates:
+$$
+I_t = \text{Image-Gen}(P_t)
+$$
+where the initial description $P_0$ is set to $P^*$.
+
+### Critic Agent
+
+The Critic Agent forms a closed-loop refinement mechanism with the Visualizer by closely examining the generated image $I_t$ and providing refined description $P_{t+1}$ to the Visualizer. Upon receiving the generated image $I_t$ at iteration $t$, the Critic inspects it against the original source context $(S, C)$ to identify factual misalignments, visual glitches, or areas for improvement. It then provides targeted feedback and produces a refined description $P_{t+1}$ that addresses the identified issues:
+$$
+P_{t+1} = \text{VLM}_{\text{critic}}(I_t, S, C, P_t)
+$$
+This revised description is then fed back to the Visualizer for regeneration. The Visualizer-Critic loop iterates for $T=3$ rounds, with the final output being $I = I_T$. This iterative refinement process ensures that the final illustration meets the high standards required for academic dissemination.
+
+### Extension to Statistical Plots
+
+The framework extends to statistical plots by adjusting the Visualizer and Critic agents. For numerical precision, the Visualizer converts the description $P_t$ into executable Python Matplotlib code: $I_t = \text{VLM}_{\text{code}}(P_t)$. The Critic evaluates the rendered plot and generates a refined description $P_{t+1}$ addressing inaccuracies or imperfections: $P_{t+1} = \text{VLM}_{\text{critic}}(I_t, S, C, P_t)$. The same $T=3$ round iterative refinement process applies. While we prioritize this code-based approach for accuracy, we also explore direct image generation in Section \ref{sec:discussion}. See Appendix \ref{app_sec:plot_agent_prompt} for adjusted prompts.""",
+        "caption": (
+            "Figure 1: Overview of our PaperVizAgent framework. Given the source context "
+            "and communicative intent, we first apply a Linear Planning Phase to retrieve "
+            "relevant reference examples and synthesize a stylistically optimized description. "
+            "We then use an Iterative Refinement Loop (consisting of Visualizer and Critic "
+            "agents) to transform the description into visual output and conduct multi-round "
+            "refinements to produce the final academic illustration."
+        ),
+    },
+    "[Wide Test] PaperVizAgent Extra-Wide Pipeline": {
+        "method": r"""## Methodology: The PaperVizAgent Framework
+
+In this section, we present the architecture of PaperVizAgent, a reference-driven agentic framework for automated academic illustration. PaperVizAgent orchestrates five specialized agents—Retriever, Planner, Stylist, Visualizer, and Critic—to transform raw scientific content into publication-quality diagrams.
+
+**Visual layout requirement:** Design this figure as an extra-wide panoramic pipeline. Use a strict left-to-right horizontal flow. Place inputs on the far left, agent stages across the center from left to right, and the final illustration on the far right. Keep all five agents visible in one continuous row with clear arrows between stages.
+
+### Retriever Agent
+Given source context $S$ and communicative intent $C$, the Retriever selects $N$ relevant examples $\mathcal{E} = \{E_n\}_{n=1}^{N} \subset \mathcal{R}$ from a reference set $\mathcal{R}$:
+$$\mathcal{E} = \text{VLM}_{\text{Ret}} \left( S, C, \{ (S_i, C_i) \}_{E_i \in \mathcal{R}} \right)$$
+It ranks candidates by research domain and diagram type, prioritizing visual structure over topic similarity.
+
+### Planner Agent
+The Planner converts method content and intent into a detailed textual illustration description $P$ using in-context learning from retrieved examples:
+$$P = \text{VLM}_{\text{plan}}(S, C, \{ (S_i, C_i, I_i) \}_{E_i \in \mathcal{E}})$$
+
+### Stylist Agent
+The Stylist refines $P$ using an automatically synthesized aesthetic guideline $\mathcal{G}$ (color palette, shapes, arrows, layout, typography):
+$$P^* = \text{VLM}_{\text{style}}(P, \mathcal{G})$$
+
+### Visualizer Agent
+The Visualizer renders images from descriptions. At iteration $t$:
+$$I_t = \text{Image-Gen}(P_t), \quad P_0 = P^*$$
+
+### Critic Agent
+The Critic inspects $I_t$ against $(S, C)$ and returns an improved description:
+$$P_{t+1} = \text{VLM}_{\text{critic}}(I_t, S, C, P_t)$$
+The Visualizer–Critic loop runs for $T=3$ rounds, producing final output $I = I_T$.
+
+### Suggested figure structure (left → right)
+1. **Inputs:** boxes for Methodology Section ($S$) and Figure Caption ($C$)
+2. **Planning phase:** Retriever → Planner → Stylist (three agent boxes in a row)
+3. **Generation loop:** Visualizer ↔ Critic (cyclic refinement, 3 rounds)
+4. **Output:** Final Publication-Quality Diagram
+Use thin orthogonal arrows, white background, soft academic colors, and compact labels under each agent icon.""",
+        "caption": """Figure 1: Overview of the PaperVizAgent framework (publication-style architecture diagram).
+
+Create an extra-wide panoramic pipeline figure with a clean white background and NeurIPS-style academic aesthetics.
+
+**Composition (strict left-to-right):**
+- Far left: two input blocks — "Methodology Section (S)" and "Figure Caption (C)"
+- Center-left to center: linear planning chain — Retriever → Planner → Stylist, each as a labeled rounded rectangle with a small role icon
+- Center-right: iterative refinement loop — Visualizer and Critic connected by curved bidirectional arrows, annotated "T=3 rounds"
+- Far right: output block — "Final Academic Illustration"
+
+**Style constraints:**
+- Horizontal layout only; do not stack agents vertically
+- Use consistent arrow thickness, muted blue/gray palette, sans-serif labels
+- No figure title inside the image
+- Emphasize data flow with directional arrows between every stage
+- Leave generous horizontal spacing so the diagram reads clearly at full paper width""",
+    },
+}
+
+
+def ensure_valid_aspect_ratio_state(state_key: str):
+    """Reset stale Streamlit aspect-ratio widget values (e.g. removed 32:9)."""
+    current = st.session_state.get(state_key)
+    if current not in ASPECT_RATIO_OPTIONS:
+        st.session_state[state_key] = ASPECT_RATIO_OPTIONS[DEFAULT_ASPECT_RATIO_INDEX]
+
+
+def load_example_preset():
+    """Streamlit callback: populate text areas when an example preset is selected."""
+    preset_name = st.session_state.get("demo_example_preset", "None")
+    if preset_name == "None":
+        st.session_state["_loaded_example_preset"] = None
+        return
+    apply_demo_example_preset(preset_name)
+
+
+def apply_demo_example_preset(preset_name):
+    """Load method and caption from a named demo preset into the input widgets."""
+    if preset_name in DEMO_EXAMPLE_PRESETS:
+        preset = DEMO_EXAMPLE_PRESETS[preset_name]
+        st.session_state["method_content_input"] = preset["method"]
+        st.session_state["caption_input"] = preset["caption"]
+        st.session_state["_loaded_example_preset"] = preset_name
 
 def get_configured_model_options(options_key):
     """Return model options from config; first item is the default."""
@@ -133,7 +276,7 @@ def create_sample_inputs(method_content, caption, diagram_type="Pipeline", aspec
         "content": method_content,
         "visual_intent": caption,
         "additional_info": {
-            "rounded_ratio": aspect_ratio
+            "rounded_ratio": generation_utils.normalize_aspect_ratio(aspect_ratio)
         },
         "max_critic_rounds": max_critic_rounds  # Add critic rounds control
     }
@@ -481,11 +624,13 @@ def main():
                 help="How many parallel candidates to generate"
             )
             
+            ensure_valid_aspect_ratio_state("tab1_aspect_ratio")
             aspect_ratio = st.selectbox(
                 "Aspect Ratio",
-                ["21:9", "16:9", "3:2"],
+                ASPECT_RATIO_OPTIONS,
+                index=DEFAULT_ASPECT_RATIO_INDEX,
                 key="tab1_aspect_ratio",
-                help="Aspect ratio for the generated diagrams"
+                help="8:1 extra wide, 21:9 ultrawide, 16:9 widescreen, 3:2 classic, 1:1 square (Gemini-supported ratios)",
             )
             
             max_critic_rounds = st.number_input(
@@ -501,104 +646,33 @@ def main():
         
         # Input section
         st.markdown("## 📝 Input")
-        
-        # Example content
-        example_method = r"""## Methodology: The PaperVizAgent Framework
-        
-        In this section, we present the architecture of PaperVizAgent, a reference-driven agentic framework for automated academic illustration. As illustrated in Figure \ref{fig:methodology_diagram}, PaperVizAgent orchestrates a collaborative team of five specialized agents—Retriever, Planner, Stylist, Visualizer, and Critic—to transform raw scientific content into publication-quality diagrams and plots. (See Appendix \ref{app_sec:agent_prompts} for prompts)
 
-### Retriever Agent
-
-Given the source context $S$ and the communicative intent $C$, the Retriever Agent identifies $N$ most relevant examples $\mathcal{E} = \{E_n\}_{n=1}^{N} \subset \mathcal{R}$ from the fixed reference set $\mathcal{R}$ to guide the downstream agents. As defined in Section \ref{sec:task_formulation}, each example $E_i \in \mathcal{R}$ is a triplet $(S_i, C_i, I_i)$.
-To leverage the reasoning capabilities of VLMs, we adopt a generative retrieval approach where the VLM performs selection over candidate metadata:
-$$
-\mathcal{E} = \text{VLM}_{\text{Ret}} \left( S, C, \{ (S_i, C_i) \}_{E_i \in \mathcal{R}} \right)
-$$
-Specifically, the VLM is instructed to rank candidates by matching both research domain (e.g., Agent & Reasoning) and diagram type (e.g., pipeline, architecture), with visual structure being prioritized over topic similarity. By explicitly reasoned selection of reference illustrations $I_i$ whose corresponding contexts $(S_i, C_i)$ best match the current requirements, the Retriever provides a concrete foundation for both structural logic and visual style.
-
-### Planner Agent
-
-The Planner Agent serves as the cognitive core of the system. It takes the source context $S$, communicative intent $C$, and retrieved examples $\mathcal{E}$ as inputs. By performing in-context learning from the demonstrations in $\mathcal{E}$, the Planner translates the unstructured or structured data in $S$ into a comprehensive and detailed textual description $P$ of the target illustration:
-$$
-P = \text{VLM}_{\text{plan}}(S, C, \{ (S_i, C_i, I_i) \}_{E_i \in \mathcal{E}})
-$$
-
-### Stylist Agent
-
-To ensure the output adheres to the aesthetic standards of modern academic manuscripts, the Stylist Agent acts as a design consultant.
-A primary challenge lies in defining a comprehensive “academic style,” as manual definitions are often incomplete.
-To address this, the Stylist traverses the entire reference collection $\mathcal{R}$ to automatically synthesize an *Aesthetic Guideline* $\mathcal{G}$ covering key dimensions such as color palette, shapes and containers, lines and arrows, layout and composition, and typography and icons (see Appendix \ref{app_sec:auto_summarized_style_guide} for the summarized guideline and implementation details). Armed with this guideline, the Stylist refines each initial description $P$ into a stylistically optimized version $P^*$:
-$$
-P^* = \text{VLM}_{\text{style}}(P, \mathcal{G})
-$$
-This ensures that the final illustration is not only accurate but also visually professional.
-
-### Visualizer Agent
-
-After receiving the stylistically optimized description $P^*$, the Visualizer Agent collaborates with the Critic Agent to render academic illustrations and iteratively refine their quality. The Visualizer Agent leverages an image generation model to transform textual descriptions into visual output. In each iteration $t$, given a description $P_t$, the Visualizer generates:
-$$
-I_t = \text{Image-Gen}(P_t)
-$$
-where the initial description $P_0$ is set to $P^*$.
-
-### Critic Agent
-
-The Critic Agent forms a closed-loop refinement mechanism with the Visualizer by closely examining the generated image $I_t$ and providing refined description $P_{t+1}$ to the Visualizer. Upon receiving the generated image $I_t$ at iteration $t$, the Critic inspects it against the original source context $(S, C)$ to identify factual misalignments, visual glitches, or areas for improvement. It then provides targeted feedback and produces a refined description $P_{t+1}$ that addresses the identified issues:
-$$
-P_{t+1} = \text{VLM}_{\text{critic}}(I_t, S, C, P_t)
-$$
-This revised description is then fed back to the Visualizer for regeneration. The Visualizer-Critic loop iterates for $T=3$ rounds, with the final output being $I = I_T$. This iterative refinement process ensures that the final illustration meets the high standards required for academic dissemination.
-
-### Extension to Statistical Plots
-
-The framework extends to statistical plots by adjusting the Visualizer and Critic agents. For numerical precision, the Visualizer converts the description $P_t$ into executable Python Matplotlib code: $I_t = \text{VLM}_{\text{code}}(P_t)$. The Critic evaluates the rendered plot and generates a refined description $P_{t+1}$ addressing inaccuracies or imperfections: $P_{t+1} = \text{VLM}_{\text{critic}}(I_t, S, C, P_t)$. The same $T=3$ round iterative refinement process applies. While we prioritize this code-based approach for accuracy, we also explore direct image generation in Section \ref{sec:discussion}. See Appendix \ref{app_sec:plot_agent_prompt} for adjusted prompts."""
-
-        example_caption = "Figure 1: Overview of our PaperVizAgent framework. Given the source context and communicative intent, we first apply a Linear Planning Phase to retrieve relevant reference examples and synthesize a stylistically optimized description. We then use an Iterative Refinement Loop (consisting of Visualizer and Critic agents) to transform the description into visual output and conduct multi-round refinements to produce the final academic illustration."
+        example_preset = st.selectbox(
+            "Load Example",
+            ["None", *DEMO_EXAMPLE_PRESETS.keys()],
+            key="demo_example_preset",
+            on_change=load_example_preset,
+            help="Loads method text and caption only. Pick aspect ratio separately in the sidebar.",
+        )
         
         col_input1, col_input2 = st.columns([3, 2])
         
         with col_input1:
-            # Example selector for method content
-            method_example = st.selectbox(
-                "Load Example (Method)",
-                ["None", "PaperVizAgent Framework"],
-                key="method_example_selector"
-            )
-            
-            # Set value based on example selection or session state
-            if method_example == "PaperVizAgent Framework":
-                method_value = example_method
-            else:
-                method_value = st.session_state.get("method_content", "")
-            
             method_content = st.text_area(
                 "Method Section Content (Markdown recommended)",
-                value=method_value,
                 height=250,
                 placeholder="Paste the method section content here...",
-                help="The method section from the paper that describes the approach. Markdown format is recommended."
+                help="The method section from the paper that describes the approach. Markdown format is recommended.",
+                key="method_content_input",
             )
         
         with col_input2:
-            # Example selector for caption
-            caption_example = st.selectbox(
-                "Load Example (Caption)",
-                ["None", "PaperVizAgent Framework"],
-                key="caption_example_selector"
-            )
-            
-            # Set value based on example selection or session state
-            if caption_example == "PaperVizAgent Framework":
-                caption_value = example_caption
-            else:
-                caption_value = st.session_state.get("caption", "")
-            
             caption = st.text_area(
                 "Figure Caption (Markdown recommended)",
-                value=caption_value,
                 height=250,
                 placeholder="Enter the figure caption...",
-                help="The caption or description of the figure to generate. Markdown format is recommended."
+                help="The caption or description of the figure to generate. Markdown format is recommended.",
+                key="caption_input",
             )
         
         # Process button
@@ -606,10 +680,6 @@ The framework extends to statistical plots by adjusting the Visualizer and Criti
             if not method_content or not caption:
                 st.error("Please provide both method content and caption!")
             else:
-                # Save to session state
-                st.session_state["method_content"] = method_content
-                st.session_state["caption"] = caption
-                
                 with st.spinner(f"Generating {num_candidates} candidates in parallel... This may take a few minutes."):
                     # Create input data list
                     input_data_list = create_sample_inputs(
@@ -769,12 +839,13 @@ The framework extends to statistical plots by adjusting the Visualizer and Criti
                 help="Higher resolution takes longer but produces better quality"
             )
             
+            ensure_valid_aspect_ratio_state("refine_aspect_ratio")
             refine_aspect_ratio = st.selectbox(
                 "Aspect Ratio",
-                ["21:9", "16:9", "3:2"],
-                index=0,
+                ASPECT_RATIO_OPTIONS,
+                index=DEFAULT_ASPECT_RATIO_INDEX,
                 key="refine_aspect_ratio",
-                help="Aspect ratio for the refined image"
+                help="8:1 extra wide, 21:9 ultrawide, 16:9 widescreen, 3:2 classic, 1:1 square (Gemini-supported ratios)",
             )
         
         st.divider()

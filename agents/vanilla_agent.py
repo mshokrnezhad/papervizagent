@@ -133,8 +133,10 @@ class VanillaAgent(BaseAgent):
         ):
             gen_config_args["response_modalities"] = ["IMAGE"]
             gen_config_args["image_config"] = types.ImageConfig(
-                aspect_ratio=data["additional_info"]["rounded_ratio"],
-                image_size="1k",
+                aspect_ratio=generation_utils.normalize_aspect_ratio(
+                    data["additional_info"]["rounded_ratio"]
+                ),
+                image_size="1K",
             )
         
         if (

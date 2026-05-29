@@ -245,13 +245,10 @@ def _gemini_config_to_openrouter_kwargs(config, model_name: str) -> Dict[str, An
     if is_image_request:
         extra_body = {"modalities": ["image", "text"]}
         if image_config is not None:
-            image_cfg = {}
-            aspect_ratio = getattr(image_config, "aspect_ratio", None)
-            image_size = getattr(image_config, "image_size", None)
-            if aspect_ratio:
-                image_cfg["aspect_ratio"] = aspect_ratio
-            if image_size:
-                image_cfg["image_size"] = image_size
+            image_cfg = build_openrouter_image_config(
+                aspect_ratio=getattr(image_config, "aspect_ratio", None),
+                image_size=getattr(image_config, "image_size", None),
+            )
             if image_cfg:
                 extra_body["image_config"] = image_cfg
         kwargs["extra_body"] = extra_body
@@ -550,6 +547,49 @@ async def call_openai_with_retry_async(
     )
 
 
+# Supported by Gemini image models via OpenRouter (Google AI Studio)
+SUPPORTED_ASPECT_RATIOS = [
+    "1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4",
+    "8:1", "9:16", "16:9", "21:9",
+]
+ASPECT_RATIO_ALIASES = {"32:9": "21:9"}
+
+
+def coerce_aspect_ratio_value(aspect_ratio) -> str:
+    if aspect_ratio is None:
+        return ""
+    if hasattr(aspect_ratio, "value"):
+        return str(aspect_ratio.value).strip()
+    return str(aspect_ratio).strip()
+
+
+def normalize_aspect_ratio(aspect_ratio, fallback: str = "16:9") -> str:
+    ratio = coerce_aspect_ratio_value(aspect_ratio)
+    if not ratio:
+        return fallback
+    if ratio in SUPPORTED_ASPECT_RATIOS:
+        return ratio
+    if ratio in ASPECT_RATIO_ALIASES:
+        mapped = ASPECT_RATIO_ALIASES[ratio]
+        print(f"Note: aspect ratio {ratio} mapped to supported {mapped}")
+        return mapped
+    print(f"Warning: aspect ratio {ratio} not supported, using {fallback}")
+    return fallback
+
+
+def build_openrouter_image_config(aspect_ratio=None, image_size=None) -> dict:
+    """Build OpenRouter image_config with only Gemini-supported fields."""
+    image_cfg = {}
+    if aspect_ratio:
+        image_cfg["aspect_ratio"] = normalize_aspect_ratio(aspect_ratio)
+    # OpenRouter Gemini image models reject lowercase sizes like "1k".
+    if image_size:
+        size = str(image_size).strip().upper()
+        if size in {"1K", "2K", "4K"}:
+            image_cfg["image_size"] = size
+    return image_cfg
+
+
 async def call_openrouter_image_generation_with_retry_async(
     model_name,
     contents,
@@ -563,11 +603,10 @@ async def call_openrouter_image_generation_with_retry_async(
     error_context="",
 ):
     extra_body = {"modalities": ["image", "text"]}
-    image_cfg = {}
-    if aspect_ratio:
-        image_cfg["aspect_ratio"] = aspect_ratio
-    if image_size:
-        image_cfg["image_size"] = image_size
+    image_cfg = build_openrouter_image_config(
+        aspect_ratio=aspect_ratio,
+        image_size=image_size,
+    )
     if image_cfg:
         extra_body["image_config"] = image_cfg
 

@@ -17,8 +17,18 @@
 
 # Models (first item in each list is the default)
 defaults:
-  model_options: [] # e.g. ["google/gemini-3.1-flash-lite-preview", "google/gemini-3.1-pro-preview"]
-  image_model_options: [] # e.g. ["google/gemini-3.1-flash-image-preview", "openai/gpt-5-image-mini"]
+  model_options:
+    - "google/gemini-3.1-flash-lite-preview"
+    - "google/gemini-3.5-flash"
+    - "openai/gpt-5.4-nano"
+    - "openai/gpt-5.4-mini"
+    - "openai/gpt-5.4"
+  image_model_options:
+    - "google/gemini-3.1-flash-image-preview"
+    - "google/gemini-3-pro-image-preview"
+    - "openai/gpt-5-image-mini"
+    - "openai/gpt-5-image-large"
+    - "openai/gpt-5.4-image-2"
 
 # Google Cloud / Vertex AI settings
 google_cloud:

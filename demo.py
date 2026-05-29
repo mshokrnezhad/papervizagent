@@ -77,6 +77,33 @@ st.set_page_config(
     page_icon="🍌"
 )
 
+def get_configured_model_options(options_key):
+    """Return model options from config; first item is the default."""
+    options = model_config_data.get("defaults", {}).get(options_key, []) or []
+    return options or ["CONFIGURE_MODEL_IN_YAML"]
+
+
+def render_model_settings():
+    """Shared model selectors used by generation and refinement."""
+    text_model_options = get_configured_model_options("model_options")
+    image_model_options = get_configured_model_options("image_model_options")
+
+    model_name = st.selectbox(
+        "Text Model",
+        text_model_options,
+        index=0,
+        key="selected_text_model",
+        help="Used by Planner, Stylist, Critic, and Retriever. First option in yaml is the default.",
+    )
+    image_model_name = st.selectbox(
+        "Image Model",
+        image_model_options,
+        index=0,
+        key="selected_image_model",
+        help="Used by Visualizer and the Refine tab. First option in yaml is the default.",
+    )
+    return model_name, image_model_name
+
 def clean_text(text):
     """Clean text by removing invalid UTF-8 surrogate characters."""
     if not text:
@@ -121,7 +148,13 @@ def create_sample_inputs(method_content, caption, diagram_type="Pipeline", aspec
     
     return inputs
 
-async def process_parallel_candidates(data_list, exp_mode="dev_planner_critic", retrieval_setting="auto", model_name=""):
+async def process_parallel_candidates(
+    data_list,
+    exp_mode="dev_planner_critic",
+    retrieval_setting="auto",
+    model_name="",
+    image_model_name="",
+):
     """Process multiple candidates in parallel using PaperVizProcessor."""
     # Create experiment config
     exp_config = config.ExpConfig(
@@ -130,6 +163,7 @@ async def process_parallel_candidates(data_list, exp_mode="dev_planner_critic", 
         exp_mode=exp_mode,
         retrieval_setting=retrieval_setting,
         model_name=model_name,
+        image_model_name=image_model_name,
         work_dir=Path(__file__).parent,
     )
     
@@ -156,30 +190,66 @@ async def process_parallel_candidates(data_list, exp_mode="dev_planner_critic", 
     
     return results
 
-async def refine_image_with_nanoviz(image_bytes, edit_prompt, aspect_ratio="21:9", image_size="2K"):
+async def refine_image_with_nanoviz(
+    image_bytes,
+    edit_prompt,
+    aspect_ratio="21:9",
+    image_size="2K",
+    image_model=None,
+):
     """
     Refine an image using an Image Editing API.
-    
-    Args:
-        image_bytes: Image data in bytes
-        edit_prompt: Text description of desired changes
-        aspect_ratio: Output aspect ratio (21:9, 16:9, 3:2)
-        image_size: Output resolution (2K or 4K)
-    
-    Returns:
-        Tuple of (edited_image_bytes, success_message)
     """
+    from utils import generation_utils
+
+    if not image_model:
+        image_options = get_configured_model_options("image_model_options")
+        image_model = image_options[0] if image_options else ""
+    if not image_model:
+        return None, "❌ No image model configured in configs/model_config.yaml"
+
+    if generation_utils.is_openrouter_configured():
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        contents = [
+            {"type": "text", "text": edit_prompt},
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": image_b64,
+                },
+            },
+        ]
+        try:
+            response_list = await generation_utils.call_openrouter_image_generation_with_retry_async(
+                model_name=image_model,
+                contents=contents,
+                aspect_ratio=aspect_ratio,
+                image_size=image_size,
+                max_attempts=3,
+                retry_delay=10,
+                error_context="image refinement",
+            )
+            if response_list and response_list[0] and response_list[0] != "Error":
+                return base64.b64decode(response_list[0]), "✅ Image refined successfully!"
+            return None, "❌ No image data found in OpenRouter response"
+        except Exception as e:
+            return None, f"❌ Error: {str(e)}"
+
     try:
         from google import genai
         from google.genai import types
-        
-        # Initialize client
+
         project_id = get_config_val("google_cloud", "project_id", "GOOGLE_CLOUD_PROJECT", "")
         location = get_config_val("google_cloud", "location", "GOOGLE_CLOUD_LOCATION", "global")
-        
-        client = genai.Client(vertexai=True, project=project_id, location=location)
-        
-        # Prepare content
+        google_api_key = get_config_val("api_keys", "google_api_key", "GOOGLE_API_KEY", "")
+
+        if google_api_key:
+            client = genai.Client(api_key=google_api_key)
+        else:
+            client = genai.Client(vertexai=True, project=project_id, location=location)
+
         contents = [
             types.Part.from_text(text=edit_prompt),
             types.Part.from_bytes(
@@ -187,8 +257,7 @@ async def refine_image_with_nanoviz(image_bytes, edit_prompt, aspect_ratio="21:9
                 data=image_bytes
             )
         ]
-        
-        # Configure generation
+
         config = types.GenerateContentConfig(
             temperature=1.0,
             max_output_tokens=8192,
@@ -198,29 +267,26 @@ async def refine_image_with_nanoviz(image_bytes, edit_prompt, aspect_ratio="21:9
                 image_size=image_size,
             ),
         )
-        
-        # Generate refined image
-        image_model = get_config_val("defaults", "image_model_name", "IMAGE_MODEL_NAME", "")
+
         response = await asyncio.to_thread(
             client.models.generate_content,
             model=image_model,
             contents=contents,
             config=config
         )
-        
-        # Extract image from response
+
         if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
                 if hasattr(part, 'inline_data') and part.inline_data:
                     edited_image_data = part.inline_data.data
-                    
+
                     if isinstance(edited_image_data, bytes):
                         return edited_image_data, "✅ Image refined successfully!"
                     elif isinstance(edited_image_data, str):
                         return base64.b64decode(edited_image_data), "✅ Image refined successfully!"
-        
+
         return None, "❌ No image data found in response"
-    
+
     except Exception as e:
         return None, f"❌ Error: {str(e)}"
 
@@ -302,7 +368,7 @@ def display_candidate_result(result, candidate_id, exp_mode):
     if final_image_key and final_image_key in result:
         img = base64_to_image(result[final_image_key])
         if img:
-            st.image(img, use_container_width=True, caption=f"Candidate {candidate_id} (Final)")
+            st.image(img, width='stretch', caption=f"Candidate {candidate_id} (Final)")
             
             # Add download button
             buffered = BytesIO()
@@ -313,7 +379,7 @@ def display_candidate_result(result, candidate_id, exp_mode):
                 file_name=f"candidate_{candidate_id}.png",
                 mime="image/png",
                 key=f"download_candidate_{candidate_id}",
-                use_container_width=True
+                width='stretch'
             )
         else:
             st.error(f"Failed to decode image for Candidate {candidate_id}")
@@ -333,7 +399,7 @@ def display_candidate_result(result, candidate_id, exp_mode):
                 # Display the image for this stage
                 stage_img = base64_to_image(result.get(stage['image_key']))
                 if stage_img:
-                    st.image(stage_img, use_container_width=True)
+                    st.image(stage_img, width='stretch')
                 
                 # Show description
                 if stage['desc_key'] in result:
@@ -367,6 +433,11 @@ def display_candidate_result(result, candidate_id, exp_mode):
 def main():
     st.title("🍌 PaperVizAgent Demo")
     st.markdown("AI-powered scientific diagram generation and refinement")
+
+    with st.sidebar:
+        st.title("🤖 Models")
+        model_name, image_model_name = render_model_settings()
+        st.divider()
     
     # Create tabs
     tab1, tab2 = st.tabs(["📊 Generate Candidates", "✨ Refine Image"])
@@ -395,10 +466,10 @@ def main():
             
             retrieval_setting = st.selectbox(
                 "Retrieval Setting",
-                ["auto", "manual", "random", "none"],
+                ["none", "auto", "manual", "random"],
                 index=0,
                 key="tab1_retrieval_setting",
-                help="How to retrieve reference diagrams: auto (automatic selection), manual (use specified references), random (random selection), none (no retrieval)"
+                help="How to retrieve reference diagrams: none (no retrieval, recommended without dataset), auto, manual, or random"
             )
             
             num_candidates = st.number_input(
@@ -424,17 +495,6 @@ def main():
                 value=3,
                 key="tab1_max_critic_rounds",
                 help="Maximum number of critic refinement iterations"
-            )
-            
-            default_model = get_config_val("defaults", "model_name", "MODEL_NAME", "YOUR_MODEL_NAME_HERE")
-            options = ["", default_model] if default_model else ["", "YOUR_MODEL_NAME_HERE"]
-            
-            model_name = st.selectbox(
-                "Model Name",
-                options,
-                index=0,
-                key="tab1_model_name",
-                help="Model name to use for reasoning"
             )
         
         st.divider()
@@ -542,7 +602,7 @@ The framework extends to statistical plots by adjusting the Visualizer and Criti
             )
         
         # Process button
-        if st.button("🚀 Generate Candidates", type="primary", use_container_width=True):
+        if st.button("🚀 Generate Candidates", type="primary", width='stretch'):
             if not method_content or not caption:
                 st.error("Please provide both method content and caption!")
             else:
@@ -566,7 +626,8 @@ The framework extends to statistical plots by adjusting the Visualizer and Criti
                             input_data_list, 
                             exp_mode=exp_mode, 
                             retrieval_setting=retrieval_setting,
-                            model_name=model_name
+                            model_name=model_name,
+                            image_model_name=image_model_name,
                         ))
                         st.session_state["results"] = results
                         st.session_state["exp_mode"] = exp_mode
@@ -624,7 +685,7 @@ The framework extends to statistical plots by adjusting the Visualizer and Criti
                             data=json_data,
                             file_name=json_file_path.name,
                             mime="application/json",
-                            use_container_width=True
+                            width='stretch'
                         )
             
             # Display results in a grid (3 columns)
@@ -685,7 +746,7 @@ The framework extends to statistical plots by adjusting the Visualizer and Criti
                     data=zip_buffer.getvalue(),
                     file_name=f"papervizagent_candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
                     mime="application/zip",
-                    use_container_width=True
+                    width='stretch'
                 )
                 st.success("ZIP file ready for download!")
             except Exception as e:
@@ -733,7 +794,7 @@ The framework extends to statistical plots by adjusting the Visualizer and Criti
             
             with col1:
                 st.markdown("### Original Image")
-                st.image(uploaded_image, use_container_width=True)
+                st.image(uploaded_image, width='stretch')
             
             with col2:
                 st.markdown("### Edit Instructions")
@@ -745,7 +806,7 @@ The framework extends to statistical plots by adjusting the Visualizer and Criti
                     key="edit_prompt"
                 )
                 
-                if st.button("✨ Refine Image", type="primary", use_container_width=True):
+                if st.button("✨ Refine Image", type="primary", width='stretch'):
                     if not edit_prompt:
                         st.error("Please provide edit instructions!")
                     else:
@@ -762,7 +823,8 @@ The framework extends to statistical plots by adjusting the Visualizer and Criti
                                         image_bytes=image_bytes,
                                         edit_prompt=edit_prompt,
                                         aspect_ratio=refine_aspect_ratio,
-                                        image_size=refine_resolution
+                                        image_size=refine_resolution,
+                                        image_model=image_model_name,
                                     )
                                 )
                                 
@@ -788,12 +850,12 @@ The framework extends to statistical plots by adjusting the Visualizer and Criti
                 
                 with col1:
                     st.markdown("### Before")
-                    st.image(uploaded_image, use_container_width=True)
+                    st.image(uploaded_image, width='stretch')
                 
                 with col2:
                     st.markdown(f"### After ({refine_resolution})")
                     refined_image = Image.open(BytesIO(st.session_state["refined_image"]))
-                    st.image(refined_image, use_container_width=True)
+                    st.image(refined_image, width='stretch')
                     
                     # Download button
                     st.download_button(
@@ -801,7 +863,7 @@ The framework extends to statistical plots by adjusting the Visualizer and Criti
                         data=st.session_state["refined_image"],
                         file_name=f"refined_{refine_resolution}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
                         mime="image/png",
-                        use_container_width=True
+                        width='stretch'
                     )
 
 if __name__ == "__main__":
